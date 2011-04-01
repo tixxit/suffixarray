@@ -1,18 +1,3 @@
-/* Copyright (c) 2011, Tom Switzer (thomas.switzer@gmail.com)
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
-
 /**
  * An implementation of the linear time suffix array construction of 
  * Karkkainen & Sanders:
@@ -89,8 +74,12 @@ function bsort(a, key) {
 global.suffixArray = function(s, len) {
     return Object.prototype.toString.call(s) == "[object String]"
         ? suffixArray(function(i) { return s.charCodeAt(i) }, len || s.length)
-        : _suffixArray(function(i) { return i >= len ? 0 : s(i) }, len);
+        : _suffixArray(s, len);
 }
+
+
+// Export the Bucket Sort.
+global.suffixArray.bsort = bsort;
 
 
 /* Constructs the suffix array of s. In this case, s must be a function that
@@ -152,9 +141,13 @@ function _suffixArray(s, len) {
         // Otherwise, recursively sort lex. names in b, then reconstruct the
         // indexes of the sorted array b so they are relative to a.
         
+        /// @todo Wrap (b[i % alen]) or terminate (i >= alen ? 0 : b[i])?
+
         b = _suffixArray(function(i) { return i >= alen ? 0 : b[i] }, alen);
+
         for (i = alen; i--;)
             a[i] = b[i] < r ? b[i] * 3 + 1 : ((b[i] - r) * 3 + 2);
+
     }
     
     // Sort remaining suffixes (i % 3 == 0) using prev result (i % 3 != 0).
@@ -164,7 +157,7 @@ function _suffixArray(s, len) {
         if (a[i] % 3 == 1)
             b.push(a[i] - 1);
     if (len % 3 == 1)
-        b.push(len - 1);    // Handle case where a[i] = len doesn't exist.
+        b.push(len - 1);    // Handle case where a[i] = len does not exist.
     bsort(b, function(j) { return s(j) });
 
     // Create a reverse lookup table for the indexes i, s.t. i % 3 != 0.
@@ -173,6 +166,8 @@ function _suffixArray(s, len) {
 
     while (i--)
         lookup[a[i]] = i;
+    lookup[len] = -1;       // Sometimes our lookups shoot past the end.
+    lookup[len + 1] = -2;
 
     // Merge a (i % 3 != 0) and b (i % 3 == 0) together. We only need to
     // compare, at most, 2 symbols before we end up comparing 2 suffixes whose
