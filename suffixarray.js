@@ -55,6 +55,11 @@ function bsort(a, key) {
 }
 
 
+function isInt(n) {
+    return typeof n == "number" || n instanceof Number;
+}
+
+
 /**
  * Returns the suffix array of the string s. The suffix array is constructed
  * in linear time.
@@ -64,17 +69,27 @@ function bsort(a, key) {
  * integer (a "symbol"). If a function is provided, then another argument
  * specifying its length (integer >= 0) must be provided.
  *
+ * This also takes a 3rd optional parameter that dictates how to treat the end
+ * of the string. This can be either "min" or "wrap". If it is "min", then 
+ * characters after the end of the string are treated as 0's (the minimum).
+ * If "wrap" is given, then the end of the string wraps back around to the
+ * beginning. If this parameter is omitted, then "wrap" is assumed.
+ *
+ * In the case of strings, you can omit the 2nd paramter (length) and still
+ * provide the 3rd paramter. For instance, suffixArray(str, "min").
+ *
  * The returned array contains the indexes of the string in the lexicographical
  * order of the suffixes that start at those indexes.
  *
  * @param s A string or function that maps ints between [0, len) to integers.
  * @param len The length of s (optional if s is a string, required otherwise).
+ * @param end Either "min", "wrap" or leave out (defaults to "wrap").
  * @return An array of indexes into s.
  */
-global.suffixArray = function(s, len) {
+global.suffixArray = function(s, len, end) {
     return Object.prototype.toString.call(s) == "[object String]"
-        ? suffixArray(function(i) { return s.charCodeAt(i) }, len || s.length)
-        : _suffixArray(s, len);
+        ? suffixArray(function(i) { return s.charCodeAt(i) }, isInt(len) ? len : s.length, (!isInt(len) && !end) ? len : end)
+        : _suffixArray(s, len, end);
 }
 
 
@@ -101,7 +116,7 @@ global.suffixArray.bsort = bsort;
  * objects; indexes into the string to represent suffixes, lexical names
  * representing triplets of symbols, indexes of these lexical names, etc.
  */
-function _suffixArray(s, len) {
+function _suffixArray(_s, len, end) {
     var a = [],
         b = [],
         alen = floor(2 * len / 3),  // Number of indexes s.t. i % 3 != 0.
@@ -112,7 +127,16 @@ function _suffixArray(s, len) {
         k,
         lookup = [],
         result = [],
-        tmp;
+        tmp, cmp,
+        s;
+
+    if (len == 1)
+        return [ 0 ];
+
+    end = end || "wrap";
+    s = end == "wrap"
+        ? function(i) { return _s(i % len) }
+        : function(i) { return i >= len ? 0 : _s(i) };
 
     // Sort suffixes w/ indices % 3 != 0 by their first 3 symbols (triplets).
 
@@ -141,46 +165,68 @@ function _suffixArray(s, len) {
         // Otherwise, recursively sort lex. names in b, then reconstruct the
         // indexes of the sorted array b so they are relative to a.
         
-        /// @todo Wrap (b[i % alen]) or terminate (i >= alen ? 0 : b[i])?
-
-        b = _suffixArray(function(i) { return i >= alen ? 0 : b[i] }, alen);
+        b = _suffixArray(function(i) { return b[i] }, alen, end);
 
         for (i = alen; i--;)
             a[i] = b[i] < r ? b[i] * 3 + 1 : ((b[i] - r) * 3 + 2);
 
     }
-    
-    // Sort remaining suffixes (i % 3 == 0) using prev result (i % 3 != 0).
-
-    b = [];
-    for (i = 0; i < alen; i++)
-        if (a[i] % 3 == 1)
-            b.push(a[i] - 1);
-    if (len % 3 == 1)
-        b.push(len - 1);    // Handle case where a[i] = len does not exist.
-    bsort(b, function(j) { return s(j) });
 
     // Create a reverse lookup table for the indexes i, s.t. i % 3 != 0.
     // This table can be used to simply determine the sorted order of 2
     // suffixes whose indexes are both not divisible by 3.
 
-    while (i--)
+    for (i = alen; i--;)
         lookup[a[i]] = i;
-    lookup[len] = -1;       // Sometimes our lookups shoot past the end.
-    lookup[len + 1] = -2;
+    if (end == "wrap") {
+        for (cmp = 1, i = alen - 1; i >= 0 && cmp > 0; i--) {
+            for (cmp = 0, j = a[i], k = 0; !cmp && k < len; j = (j + 1) % len, k++)
+                cmp = (j % 3 && k % 3) ? lookup[j] - lookup[k] : (s(j) - s(k));
+            lookup[a[i]] += 1;
+        }
+        lookup[len] = i;
+        lookup[len + 1] = lookup[1];
+    } else {
+        lookup[len] = -1;
+        lookup[len + 1] = -2;
+    }
+
+    /**
+     * This is a comparison function for the suffixes at indices m & n that
+     * uses the lookup table to shorten the searches. It assumes that
+     * n % 3 == 0 and m % 3 != 0.
+     */
+    cmp = function(m, n) {
+        return (s(m) - s(n)) || (m % 3 == 2
+            ? (s(m + 1) - s(n + 1)) || (lookup[m + 2] - lookup[n + 2])
+            : (lookup[m + 1] - lookup[n + 1]))
+    };
+    
+    // Sort remaining suffixes (i % 3 == 0) using prev result (i % 3 != 0).
+    // We handle the case where len % 3 == 1 specially, since we can't easily
+    // determine the sorted order of s(len ..) if we "wrap" the string. In the
+    // case where we treat the string as null terminated (end == "min"), then
+    // s(len ..) is the least string.
+
+    b = (len % 3 == 1 && end != "wrap") ? [ len - 1 ] : [];
+    for (i = 0; i < alen; i++)
+        if (a[i] % 3 == 1)
+            b.push(a[i] - 1);
+    if (len % 3 == 1 && end == "wrap") {
+        for (i = blen - 2; i > 0 && cmp(b[i] + 1, 0) > 0; i--)
+            b[i + 1] = b[i];
+        b[i + 1] = b[i];
+        b[i] = len - 1;
+    }
+    bsort(b, function(j) { return s(j) });
 
     // Merge a (i % 3 != 0) and b (i % 3 == 0) together. We only need to
     // compare, at most, 2 symbols before we end up comparing 2 suffixes whose
     // indices are both not divisible by 3. At this point, we can use the
     // reverse lookup array to order them.
-
-    for (i = 0, j = 0, k = 0; i < alen && j < blen;) {
-        tmp = (s(a[i]) - s(b[j])) || (a[i] % 3 == 2
-            ? (s(a[i] + 1) - s(b[j] + 1)) || (lookup[a[i] + 2] - lookup[b[j] + 2])
-            : (lookup[a[i] + 1] - lookup[b[j] + 1])
-        )
-        result[k++] = tmp < 0 ? a[i++] : b[j++];
-    }
+    
+    for (i = 0, j = 0, k = 0; i < alen && j < blen;)
+        result[k++] = cmp(a[i], b[j]) < 0 ? a[i++] : b[j++];
     while (i < alen)
         result[k++] = a[i++];
     while (j < blen)
