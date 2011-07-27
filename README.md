@@ -9,7 +9,7 @@ This will return the suffix array of an arbitrary string. The string itself can 
 
 	suffixArray(function(i) { return ... }, 1000);
 
-The function takes a third optional argument that can be one of 2 values: `"min"` or `"wrap"` (default is `"wrap"`). This argument specifies how the end of the string is treated. In the case of `"min"`, the string is assumed to be terminated by trailing `0`s (eg. `suffixArray("aaa", "min")` returns `[ 2, 1, 0 ]`). In the case of `"wrap"`, the string is assumed to wrap back around to the beginning, with no special terminating characters. For example, `suffixArray("baa", "wrap")` returns `[ 1, 2, 0 ]`, where as `suffixArray("baa", "min")` returns `[ 2, 1, 0 ]`.
+The function takes a third optional argument that can be one of 2 values: `"min"` or `"wrap"` (default is `"min"`). This argument specifies how the end of the string is treated. In the case of `"min"`, the string is assumed to be terminated by trailing `0`s (eg. `suffixArray("aaa", "min")` returns `[ 2, 1, 0 ]`). In the case of `"wrap"`, the string is assumed to wrap back around to the beginning, with no special terminating characters. For example, `suffixArray("baa", "wrap")` returns `[ 1, 2, 0 ]`, where as `suffixArray("baa", "min")` returns `[ 2, 1, 0 ]`.
 
 Implementation
 --------------
