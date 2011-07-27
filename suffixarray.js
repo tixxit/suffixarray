@@ -59,6 +59,17 @@ function isInt(n) {
     return typeof n == "number" || n instanceof Number;
 }
 
+function isStr(s) {
+    return Object.prototype.toString.call(s) == "[object String]";
+}
+
+
+function wrap(s) {
+    return typeof s == "function" ? s : (isStr(s)
+            ? function(i) { return s.charCodeAt(i) }
+            : function(i) { return s[i] });
+}
+
 
 /**
  * Returns the suffix array of the string s. The suffix array is constructed
@@ -87,14 +98,68 @@ function isInt(n) {
  * @return An array of indexes into s.
  */
 global.suffixArray = function(s, len, end) {
-    return Object.prototype.toString.call(s) == "[object String]"
-        ? suffixArray(function(i) { return s.charCodeAt(i) }, isInt(len) ? len : s.length, (!isInt(len) && !end) ? len : end)
-        : _suffixArray(s, len, end);
+    end = end || len;
+    len = isInt(len) ? len : s.length;
+
+    if (end == "wrap")
+        return wrappedSuffixArray(s, len);
+    else
+        return _suffixArray(wrap(s), len);
 }
 
 
 // Export the Bucket Sort.
 global.suffixArray.bsort = bsort;
+
+
+/**
+ * Constructs the suffix array of s. It takes either a string, an array, or a
+ * function that takes an integer and returns a unsigned integer. It also takes
+ * an optional 2nd paramter, the length. This is required if the first
+ * parameter is a function.
+ *
+ * This uses the nice idea from Karkkainen & Sander's paper of replacing each
+ * letter with the equivalent k-letter version (3 in their paper, 2 in this
+ * algorithm). This is repeated recursively until all the letters are
+ * different. This doesn't have the nice 1/3 pruning / merge step of their
+ * algorithm, but still performs relatively fast, running in O(n log n).
+ *
+ * @param s A string, array, or function.
+ * @param len The length of s.
+ * @return The order of the suffixes.
+ */
+function wrappedSuffixArray(s, len) {
+    len = isInt(len) ? len : s.length;
+    s = wrap(s);
+
+    var array = [],
+        swap = [],
+        order = [],
+        span,
+        sym,
+        i = len;
+
+    while (i--)
+        array[i] = s(order[i] = i);
+
+    for (span = 1; sym != len && span < len; span *= 2) {
+        bsort(order, function(i) { return array[(i + span) % len] });
+        bsort(order, function(i) { return array[i] });
+
+        sym = swap[order[0]] = 1;
+        for (i = 1; i < len; i++) {
+            if (array[order[i]] != array[order[i - 1]] || array[(order[i] + span) % len] != array[(order[i - 1] + span) % len])
+                sym++;
+            swap[order[i]] = sym;
+        }
+
+        tmp = array;
+        array = swap;
+        swap = tmp;
+    }
+
+    return order;
+}
 
 
 /* Constructs the suffix array of s. In this case, s must be a function that
@@ -116,7 +181,7 @@ global.suffixArray.bsort = bsort;
  * objects; indexes into the string to represent suffixes, lexical names
  * representing triplets of symbols, indexes of these lexical names, etc.
  */
-function _suffixArray(_s, len, end) {
+function _suffixArray(_s, len) {
     var a = [],
         b = [],
         alen = floor(2 * len / 3),  // Number of indexes s.t. i % 3 != 0.
@@ -133,10 +198,7 @@ function _suffixArray(_s, len, end) {
     if (len == 1)
         return [ 0 ];
 
-    end = end || "wrap";
-    s = end == "wrap"
-        ? function(i) { return _s(i % len) }
-        : function(i) { return i >= len ? 0 : _s(i) };
+    s = function(i) { return i >= len ? 0 : _s(i) };
 
     // Sort suffixes w/ indices % 3 != 0 by their first 3 symbols (triplets).
 
@@ -151,7 +213,7 @@ function _suffixArray(_s, len, end) {
 
     // Array b contains lex. names in the order they appear in s for i % 3 != 0
 
-    j = b[floor(a[0] / 3) + (a[0] % 3 == 1 ? 0 : r)] = 0;
+    j = b[floor(a[0] / 3) + (a[0] % 3 == 1 ? 0 : r)] = 1;
     for (i = 1; i < alen; i++) {
         if (s(a[i]) != s(a[i-1]) || s(a[i] + 1) != s(a[i-1] + 1) || s(a[i] + 2) != s(a[i-1] + 2))
             j++;
@@ -160,12 +222,12 @@ function _suffixArray(_s, len, end) {
 
     // If all lex. names are unique, then a is already completely sorted.
 
-    if (j < alen - 1) {
+    if (j < alen) {
 
         // Otherwise, recursively sort lex. names in b, then reconstruct the
         // indexes of the sorted array b so they are relative to a.
         
-        b = _suffixArray(function(i) { return b[i] }, alen, end);
+        b = _suffixArray(function(i) { return b[i] }, alen);
 
         for (i = alen; i--;)
             a[i] = b[i] < r ? b[i] * 3 + 1 : ((b[i] - r) * 3 + 2);
@@ -178,18 +240,8 @@ function _suffixArray(_s, len, end) {
 
     for (i = alen; i--;)
         lookup[a[i]] = i;
-    if (end == "wrap") {
-        for (cmp = 1, i = alen - 1; i >= 0 && cmp > 0; i--) {
-            for (cmp = 0, j = a[i], k = 0; !cmp && k < len; j = (j + 1) % len, k++)
-                cmp = (j % 3 && k % 3) ? lookup[j] - lookup[k] : (s(j) - s(k));
-            lookup[a[i]] += 1;
-        }
-        lookup[len] = i;
-        lookup[len + 1] = lookup[1];
-    } else {
-        lookup[len] = -1;
-        lookup[len + 1] = -2;
-    }
+    lookup[len] = -1;
+    lookup[len + 1] = -2;
 
     /**
      * This is a comparison function for the suffixes at indices m & n that
@@ -203,21 +255,11 @@ function _suffixArray(_s, len, end) {
     };
     
     // Sort remaining suffixes (i % 3 == 0) using prev result (i % 3 != 0).
-    // We handle the case where len % 3 == 1 specially, since we can't easily
-    // determine the sorted order of s(len ..) if we "wrap" the string. In the
-    // case where we treat the string as null terminated (end == "min"), then
-    // s(len ..) is the least string.
 
-    b = (len % 3 == 1 && end != "wrap") ? [ len - 1 ] : [];
+    b = len % 3 == 1 ? [ len - 1 ] : [];
     for (i = 0; i < alen; i++)
         if (a[i] % 3 == 1)
             b.push(a[i] - 1);
-    if (len % 3 == 1 && end == "wrap") {
-        for (i = blen - 2; i > 0 && cmp(b[i] + 1, 0) > 0; i--)
-            b[i + 1] = b[i];
-        b[i + 1] = b[i];
-        b[i] = len - 1;
-    }
     bsort(b, function(j) { return s(j) });
 
     // Merge a (i % 3 != 0) and b (i % 3 == 0) together. We only need to
